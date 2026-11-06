@@ -57,10 +57,10 @@
     desde: {description: "Fecha inicio AAAA-MM-DD", map_to: date_from}
     hasta: {description: "Fecha fin AAAA-MM-DD", map_to: date_to}
   template: |
-    Total: {{ total_n }} factura(s) · CLP {{ total_sum['total_amount'] }}
-    Por mes y estado de pago (conteo · monto):
-    {% for g in groups %}- {{ g.month }} · {{ g.payment_status }}: {{ g.count }} · CLP {{ g.sum_total_amount | round(2) }}{{ '\n' }}{% endfor %}
-    {% if truncated %}ATENCIÓN: hay más facturas de las que puedo agregar (tope interno): estos totales son PARCIALES. Acota con fechas y vuelve a preguntar.{{ '\n' }}{% endif %}
+    {% if total_n == 0 %}No encontré facturas con esos filtros.{% else %}Total: **{{ total_n }} factura(s) · CLP {{ '{:,.0f}'.format(total_sum['total_amount']) }}**
+    | Mes | Pago | Docs | Monto (CLP) |
+    |---|---|---|---|
+    {% for g in groups %}| {{ g.month }} | {{ g.payment_status }} | {{ g.count }} | {{ '{:,.0f}'.format(g.sum_total_amount) }} |{{ '\n' }}{% endfor %}{% if truncated %}ATENCIÓN: total PARCIAL (tope interno superado); acota con fechas y vuelve a preguntar.{{ '\n' }}{% endif %}{% endif %}
     URL: {{ web_base }}/invoices
 
 - name: buscar_facturas

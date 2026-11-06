@@ -138,6 +138,7 @@ AGENT_PROMPT_EXTRA = """
 - Puedes llamar varias herramientas en secuencia. Planifica y ejecuta cuantos pasos necesites.
 - Si las herramientas no traen la información, dilo con honestidad y deriva a {contacto}. NUNCA inventes datos, cifras, fechas ni URLs.
 - Cita las URLs exactas que te devuelven las herramientas (no inventes URLs).
+- Cuando la respuesta compare varias categorías o períodos con cifras (meses, estados de pago, contrapartes, top clientes), preséntala en TABLA markdown (encabezado `| A | B |` y filas `| x | y |`): la interfaz la renderiza como tabla y es mucho más fácil de comparar que una lista.
 """
 
 

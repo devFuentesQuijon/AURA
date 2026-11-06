@@ -82,6 +82,16 @@ main{flex:1;display:flex;flex-direction:column;min-width:0}
 .msg.bot .burbuja{background:#fff;border:1px solid var(--borde);border-left:3px solid var(--primary);border-bottom-left-radius:4px;box-shadow:0 1px 3px rgba(17,18,44,.06)}
 .msg .burbuja a{color:var(--dark);font-weight:600;word-break:break-all}
 .msg .burbuja a:hover{color:var(--dark-osc)}
+.msg.bot .burbuja table{border-collapse:collapse;margin:10px 0 6px;width:100%;font-size:13.5px;line-height:1.4}
+.msg.bot .burbuja th{background:var(--tinte);text-align:left;padding:6px 10px;border:1px solid var(--borde);font-weight:700;white-space:nowrap}
+.msg.bot .burbuja td{padding:5px 10px;border:1px solid var(--borde);vertical-align:top}
+.msg.bot .burbuja tr:nth-child(even) td{background:rgba(17,18,44,.02)}
+.msg.bot .burbuja ul{margin:6px 0;padding-left:20px}
+.msg.bot .burbuja li{margin:2px 0}
+.msg.bot .burbuja p{margin:6px 0}
+.msg.bot .burbuja p:first-child{margin-top:0}
+.msg.bot .burbuja p:last-child{margin-bottom:0}
+.msg.bot .burbuja code{background:var(--tinte);padding:1px 5px;border-radius:4px;font-size:13px}
 .fuentes{margin-top:9px;padding-top:7px;border-top:1px dashed var(--borde);font-size:12px;color:var(--texto-suave)}
 .fuentes a{color:var(--dark);text-decoration:none;font-weight:500}
 
@@ -327,12 +337,7 @@ function agregarMsg(texto, rol, fuentes){
   div.innerHTML = `<div class="avatar">${avatarHTML}</div><div class="burbuja"></div>`;
   const burbuja = div.querySelector('.burbuja');
   if (rol === 'bot') {
-    const esc = texto.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    let conLinks = esc.replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/g, '$2');
-    conLinks = conLinks.replace(/(https?:\/\/[^\s<]+?)([.,;:]?)(?=\s|$)/g,
-      '<a href="$1" target="_blank" rel="noopener">$1</a>$2');
-    conLinks = conLinks.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-    burbuja.innerHTML = conLinks;
+    burbuja.innerHTML = mdHTML(texto);
     if (fuentes && fuentes.length) {
       const f = document.createElement('div');
       f.className = 'fuentes';
@@ -344,6 +349,58 @@ function agregarMsg(texto, rol, fuentes){
   }
   chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
+}
+
+/* Mini-markdown SEGURO para las respuestas del bot: escapa todo el HTML del
+   mensaje y solo reconstruye construcciones concretas (tablas pipe, listas,
+   negritas, code y links). Nada de HTML arbitrario del modelo ni de los
+   datos en vivo llega al DOM sin pasar por escape. */
+function esc(s){
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function inlineMD(s){
+  const tok = [];
+  s = esc(s);
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s\)]+)\)/g,
+    (m, t, u) => { tok.push(`<a href="${u}" target="_blank" rel="noopener">${t}</a>`);
+                  return `\uE000${tok.length - 1}\uE001`; });
+  s = s.replace(/(https?:\/\/[^\s<]+?)([.,;:]?)(?=\s|$)/g,
+    '<a href="$1" target="_blank" rel="noopener">$1</a>$2');
+  s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  s = s.replace(/`([^`]+)`/g, '<code>$1</code>');
+  s = s.replace(/\uE000(\d+)\uE001/g, (m, n) => tok[+n]);
+  return s;
+}
+function mdHTML(src){
+  const lineas = src.split('\n');
+  let html = '', i = 0, lista = false;
+  const cierraLista = () => { if (lista){ html += '</ul>'; lista = false; } };
+  const celdas = r => r.trim().replace(/^\|/, '').replace(/\|$/, '').split('|')
+                             .map(c => inlineMD(c.trim()));
+  while (i < lineas.length){
+    const l = lineas[i];
+    if (/^\s*\|.*\|\s*$/.test(l) && i + 1 < lineas.length
+        && /^\s*\|[\s:|-]+\|\s*$/.test(lineas[i + 1])){
+      cierraLista();
+      const head = celdas(l);
+      let j = i + 2, filas = [];
+      while (j < lineas.length && /^\s*\|.*\|\s*$/.test(lineas[j])){
+        filas.push(celdas(lineas[j])); j++;
+      }
+      html += '<table><thead><tr>' + head.map(c => `<th>${c}</th>`).join('') + '</tr></thead><tbody>';
+      for (const f of filas) html += '<tr>' + f.map(c => `<td>${c}</td>`).join('') + '</tr>';
+      html += '</tbody></table>';
+      i = j; continue;
+    }
+    const m = l.match(/^\s*[-•]\s+(.*)$/);
+    if (m){ if (!lista){ html += '<ul>'; lista = true; } html += `<li>${inlineMD(m[1])}</li>`; i++; continue; }
+    cierraLista();
+    if (!l.trim()){ i++; continue; }
+    html += `<p>${inlineMD(l)}</p>`;
+    i++;
+  }
+  cierraLista();
+  return html;
 }
 
 function setSugerencias(lista){
