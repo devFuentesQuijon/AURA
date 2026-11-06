@@ -1,8 +1,8 @@
-# CHAT-AURA · Copiloto web para cualquier sitio
+# AURA · Copiloto web para cualquier sitio
 
 [![Stack](https://img.shields.io/badge/stack-FastAPI%20%2B%20nginx%20%2B%20GLM-FF6B00)]()
 
-**CHAT-AURA** convierte cualquier sitio web en un chat con copiloto: se le indica la URL del sitio, un scraper con navegador real (Playwright + Chrome) recorre sus páginas y organiza el contenido en una base de conocimiento, y los usuarios de ese sitio pueden preguntarle en lenguaje natural. Cada respuesta cita las páginas oficiales del sitio.
+**AURA** convierte cualquier sitio web en un chat con copiloto: se le indica la URL del sitio, un scraper con navegador real (Playwright + Chrome) recorre sus páginas y organiza el contenido en una base de conocimiento, y los usuarios de ese sitio pueden preguntarle en lenguaje natural. Cada respuesta cita las páginas oficiales del sitio.
 
 **Una instancia = un sitio.** Para copilotear otro sitio se levanta otra instancia con otro `SITE_URL`.
 
