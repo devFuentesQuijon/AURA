@@ -1,0 +1,14 @@
+.git
+.venv
+venv
+__pycache__
+*.pyc
+scraper
+frontend/index.html
+frontend/nginx.conf
+frontend/Dockerfile
+*.log
+.env
+docker-compose*.yml
+aura.sh
+README.md

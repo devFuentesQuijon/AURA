@@ -1,0 +1,48 @@
+# CHAT-AURA — una instancia = un copiloto para un sitio web.
+# La identidad del sitio se define en .env (SITE_URL) y se materializa
+# en data/ + frontend/assets/ al correr `./aura.sh scrape`.
+services:
+  backend:
+    build:
+      context: .                    # raíz del repo: trae app/ + data/ + marca
+      dockerfile: backend/Dockerfile
+    container_name: aura-chat-backend
+    restart: unless-stopped
+    init: true  # reaping de procesos hijo de pi
+    environment:
+      ZAI_API_KEY: ${ZAI_API_KEY:-}
+      ZAI_BASE_URL: ${ZAI_BASE_URL:-https://api.z.ai/api/coding/paas/v4}
+      ZAI_MODEL: ${ZAI_MODEL:-glm-5.1}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_BASE_URL: ${LLM_BASE_URL:-}
+      LLM_MODEL: ${LLM_MODEL:-}
+      PI_MODEL: ${PI_MODEL:-glm-5.3-flash}
+      PI_TIMEOUT: ${PI_TIMEOUT:-120}
+      PI_ENABLED: ${PI_ENABLED:-0}
+      ASSISTANT_NAME: ${ASSISTANT_NAME:-Aura}
+      # Datos en vivo: el backend llama la API del sitio con el JWT del
+      # usuario (header X-User-Token). Solo lectura; la API aplica los
+      # permisos del usuario.
+      LIVE_API_ENABLED: ${LIVE_API_ENABLED:-1}
+      LIVE_API_BASE_URL: ${LIVE_API_BASE_URL:-http://host.docker.internal:5200/api/v1}
+      LIVE_API_TIMEOUT: ${LIVE_API_TIMEOUT:-15}
+      LIVE_TOOLS_PATH: ${LIVE_TOOLS_PATH:-}
+      MCP_SERVERS_PATH: ${MCP_SERVERS_PATH:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # Linux: alcanzar servicios del host
+    ports:
+      - "8291:8000"
+    networks: [aura]
+
+  frontend:
+    build: ./frontend
+    container_name: aura-chat-frontend
+    restart: unless-stopped
+    depends_on: [backend]
+    ports:
+      - "8290:80"
+    networks: [aura]
+
+networks:
+  aura:
+    driver: bridge

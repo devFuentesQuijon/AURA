@@ -1,0 +1,96 @@
+# Herramientas de datos en vivo — instancia SixFacturIA.
+# El backend reenvía el Bearer del usuario conectado; la API del sitio aplica
+# sus permisos granulares (401 sin sesión, 403 sin permiso). Solo lectura.
+# Referencia de endpoints: manual/10-api-rest.md
+#
+# Formato general de cada tool:
+#   name / description / method (GET|POST) / endpoint
+#   params:     argumentos del modelo -> query (GET) o body (POST); map_to
+#               renombra al parámetro real del API; {var} en el endpoint se
+#               rellena con el param y no se envía aparte
+#   static_params: siempre enviados (p. ej. paginación)
+#   min_params:  mínimo de filtros exigidos antes de llamar
+#   template:    Jinja2 sobre el JSON de respuesta (+ web_base). Convención:
+#                los saltos de línea críticos se emiten con {{ '\n' }} (los
+#                tags {% %} se comen el newline siguiente); sin template se
+#                aplana el JSON genéricamente.
+
+- name: mi_perfil
+  description: "Identidad y permisos del usuario conectado. Úsala si pregunta '¿con qué usuario estoy conectado?' o qué puedes ver de sus datos."
+  method: GET
+  endpoint: /auth/me
+  template: |
+    Usuario conectado: {{ email }} (rol {{ role }}, {% if is_active %}activo{% else %}INACTIVO{% endif %}).
+    Permisos: {{ permissions | join(', ') if permissions else '(ninguno)' }}.
+
+- name: metricas_dashboard
+  description: "KPIs reales del sistema: totales, conteo por estado de procesamiento, top clientes/proveedores por monto, totales por moneda. Úsala para '¿por qué hay N facturas pendientes?', '¿cuántas facturas hay?', '¿qué clientes más facturan?', '¿por qué no hay compras este mes?'."
+  method: GET
+  endpoint: /dashboard/kpis
+  params:
+    desde: {description: "Fecha inicio AAAA-MM-DD", map_to: date_from}
+    hasta: {description: "Fecha fin AAAA-MM-DD", map_to: date_to}
+  template: |
+    Total facturas: {{ total_invoices }} (ventas {{ total_sales }}, compras {{ total_purchases }}).
+    Por estado: {{ status_counts.items() | map('join', ': ') | join(', ') }}.
+    {% for c in by_currency[:4] %}{{ c.currency }}: {{ c.invoice_count }} documentos (ventas {{ c.sales_amount }}, compras {{ c.purchase_amount }}).{{ '\n' }}{% endfor %}
+    {% if top_customers %}Top clientes por monto: {% for t in top_customers[:5] %}{{ t.name }} ({{ t.currency }} {{ t.total_amount }}, {{ t.invoice_count }} docs){{ '; ' if not loop.last else '.' }}{{ '\n' if loop.last }}{% endfor %}{% endif %}
+    {% if top_suppliers %}Top proveedores por monto: {% for t in top_suppliers[:5] %}{{ t.name }} ({{ t.currency }} {{ t.total_amount }}, {{ t.invoice_count }} docs){{ '; ' if not loop.last else '.' }}{{ '\n' if loop.last }}{% endfor %}{% endif %}
+    URL: {{ web_base }}/
+
+- name: buscar_facturas
+  description: "Busca facturas reales con filtros; exige al menos uno (texto libre, estado pending/processed/error, tipo sale/purchase, estado de pago pendiente/parcial/saldado/incobrable, moneda ISO, rango de fechas AAAA-MM-DD). Úsala para 'muéstrame las facturas con error de esta semana' o 'busca la factura 123'."
+  method: POST
+  endpoint: /invoices/search
+  min_params: 1
+  static_params: {page: 1, page_size: 5}
+  params:
+    search: {description: "Texto libre (número, cliente, emisor)"}
+    estado: {description: "pending | processed | error", map_to: status}
+    tipo: {description: "sale | purchase", map_to: invoice_type}
+    pago: {description: "pendiente | parcial | saldado | incobrable", map_to: payment_status}
+    moneda: {description: "ISO 4217, ej. CLP", map_to: currency}
+    desde: {description: "Fecha inicio AAAA-MM-DD", map_to: date_from}
+    hasta: {description: "Fecha fin AAAA-MM-DD", map_to: date_to}
+  template: |
+    {% if items %}Encontradas {{ total }} facturas (muestro {{ items | length }}):
+    {% for it in items[:5] %}- {{ (it.issue_date or 's/f')[:10] }} · {{ it.number or 's/n' }} · {{ it.type }} · {{ it.status }}{{ (', pago: ' ~ it.payment_status) if it.payment_status else '' }}{{ (' · ' ~ it.currency ~ ' ' ~ it.total_amount) if it.total_amount is not none else '' }}{{ (' · emisor: ' ~ it.supplier[:60]) if it.supplier else '' }}{{ (' · nota: ' ~ it.status_note[:140]) if it.status_note else '' }}{{ '\n' }}{% endfor %}
+    URL: {{ web_base }}/invoices
+    {% else %}No encontré facturas con esos filtros.{{ '\n' }}{% endif %}
+
+- name: archivos_importados
+  description: "Archivos importados recientes con sus errores reales. Úsala para '¿por qué fallaron los archivos de la última importación?', '¿qué archivos llegaron hoy?'."
+  method: GET
+  endpoint: /imports
+  static_params: {page: 1, page_size: 5}
+  params:
+    estado: {description: "processed | failed | skipped | duplicated (default failed)", map_to: status}
+  template: |
+    {% if items %}Últimos {{ items | length }} archivos con estado '{{ estado or 'failed' }}' (total {{ total }}):
+    {% for f in items %}- {{ (f.created_at or '')[:16] }} · {{ f.file_name }}{{ (' — ' ~ f.error_message[:160]) if f.error_message else '' }}{{ '\n' }}{% endfor %}
+    URL: {{ web_base }}/imports
+    {% else %}No hay archivos importados con ese estado.{{ '\n' }}{% endif %}
+
+- name: detalle_importacion
+  description: "Detalle de una corrida de importación (batch): conteos y archivos con su motivo de fallo. Úsala si el usuario menciona un ID de corrida."
+  method: GET
+  endpoint: "/imports/batches/{batch_id}"
+  params:
+    batch_id: {description: "UUID de la corrida", required: true}
+  template: |
+    Corrida {{ id }} ({{ source }}): {{ total }} archivos — procesados {{ processed }}, creados {{ created }}, enriquecidos {{ enriched }}, fallidos {{ failed }}, duplicados {{ duplicates }}, omitidos {{ skipped }}.{{ '\n' }}
+    {% if error %}Error general: {{ error }}{{ '\n' }}{% endif %}
+    {% for f in (files or [])[:5] %}- {{ f.file_name }}: {{ f.status }}{{ (' — ' ~ f.error_message[:160]) if f.error_message else '' }}{{ '\n' }}{% endfor %}
+
+- name: buscar_clientes
+  description: "Busca contrapartes (clientes o proveedores) por nombre o RUT/tax id. Úsala para '¿tenemos registrado a X?', 'muéstrame los datos del proveedor'."
+  method: GET
+  endpoint: /customers
+  static_params: {limit: 5}
+  params:
+    busqueda: {description: "Nombre o RUT/tax id", map_to: search, required: true}
+  template: |
+    {% if items %}Contrapartes encontradas:
+    {% for c in items %}- {{ c.name }} (RUT/tax id: {{ c.tax_id or 's/d' }}{{ (', ' ~ c.email) if c.email else '' }}){{ '\n' }}{% endfor %}
+    URL: {{ web_base }}/customers
+    {% else %}No encontré contrapartes que coincidan con '{{ busqueda }}'.{{ '\n' }}{% endif %}

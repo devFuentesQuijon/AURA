@@ -1,0 +1,39 @@
+# Secretos y entorno — NUNA versionar
+.env
+.tool-box
+data/auth_state.json
+
+# Entornos virtuales
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Datos generados por el scraper (se regeneran con ./aura.sh scrape)
+data/*.json
+data/synonyms.json
+!data/.gitkeep
+# Config de instancia opcional (si no quieres publicarla, descomenta):
+# data/live_tools.yaml
+# data/mcp_servers.json
+# Marca generada del sitio (logo, favicon, brand.json)
+frontend/assets/*
+!frontend/assets/.gitkeep
+
+# Node (si corre pi localmente)
+node_modules/
+
+# Builds y despliegue
+dist/
+build/
+*.log
+.DS_Store
+
+# Editores
+.idea/
+.vscode/
