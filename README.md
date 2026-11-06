@@ -189,7 +189,7 @@ Si el sitio exige autenticación, el scraper solo vería la pantalla de login. E
 | `GET /api/paginas` | Índice de páginas del sitio (sidebar del chat) |
 | `POST /api/chat` | `{message, history[], session_id}` → `{reply, fuentes[], paginas_sugeridas[], blocked}` |
 
-## Arquitectura (heredada de CHAT-ENAC)
+## Arquitectura
 
 - **Motor del agente**: [pi](https://github.com/earendil-works/pi) en modo one-shot con herramientas de **solo lectura** (`read`, `grep`, `glob`) sobre `data/knowledge_base.json`; planifica sus pasos y responde solo con datos del sitio. **Fallback**: loop propio de tool-calling (`listar_paginas`, `buscar_info`, `obtener_pagina`) sobre el mismo retrieval BM25.
 - **RAG**: BM25 determinista con normalización de español, boost por título de página y chunk panorámico para preguntas de "¿qué hay en este sitio?". Sin embeddings externos.
