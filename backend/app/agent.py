@@ -247,7 +247,7 @@ def _tool_live(fn):
     honestos para el modelo (nunca rompe el loop)."""
     def wrapper(args):
         try:
-            return fn(**(args or {}))
+            return fn(args or {})
         except live_api.NoAutenticado as e:
             return (f"No hay cuenta conectada o la sesión expiró: {e}. "
                     "Informa al usuario que puede conectar su cuenta para "

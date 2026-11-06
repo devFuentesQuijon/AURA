@@ -114,6 +114,11 @@ Para copilotar **otro servicio**: copia la instancia, ajusta `SITE_URL` y
 `LIVE_API_BASE_URL`, y escribe su `live_tools.yaml` / `mcp_servers.json`. Cero
 código Python.
 
+Si el API del sitio solo es alcanzable por loopback del host (túnel SSH, puerto
+sin publicar), el servicio `live-tunnel` del compose abre ese túnel dentro de
+la red Docker para que el backend lo use por DNS; en `aura.sh dev` (backend en
+el host) basta apuntar `LIVE_API_BASE_URL` a `http://localhost:<puerto>/api/v1`.
+
 Flujo del token: el usuario obtiene su JWT desde la documentación de la API del
 sitio (`/docs` → Authorize) y lo pega en el botón **Conectar cuenta** del chat;
 el frontend lo envía en cada mensaje como header `X-User-Token` (solo en

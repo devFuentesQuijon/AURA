@@ -24,7 +24,10 @@ services:
       # usuario (header X-User-Token). Solo lectura; la API aplica los
       # permisos del usuario.
       LIVE_API_ENABLED: ${LIVE_API_ENABLED:-1}
-      LIVE_API_BASE_URL: ${LIVE_API_BASE_URL:-http://host.docker.internal:5200/api/v1}
+      # El backend Docker alcanza el API del sitio vía el túnel SSH interno
+      # (live-tunnel, red igor). El túnel del host queda para uso local;
+      # aura.sh dev (backend en el host) usa .env → localhost:5200.
+      LIVE_API_BASE_URL: ${LIVE_API_BASE_URL_DOCKER:-http://aura-live-tunnel:5200/api/v1}
       LIVE_API_TIMEOUT: ${LIVE_API_TIMEOUT:-15}
       LIVE_TOOLS_PATH: ${LIVE_TOOLS_PATH:-}
       MCP_SERVERS_PATH: ${MCP_SERVERS_PATH:-}
@@ -32,6 +35,18 @@ services:
       - "host.docker.internal:host-gateway"  # Linux: alcanzar servicios del host
     ports:
       - "8291:8000"
+    networks: [aura]
+
+  live-tunnel:
+    # Túnel SSH hacia el API del sitio (mismo destino que el túnel del
+    # host, pero dentro de la red aura para que el backend lo use por DNS:
+    # http://aura-live-tunnel:5200). Sin esto, un API alcanzable solo por
+    # loopback del host no es accesible desde los contenedores.
+    build: ./live-tunnel
+    container_name: aura-live-tunnel
+    restart: unless-stopped
+    volumes:
+      - ${HOME}/.ssh:/ssh:ro
     networks: [aura]
 
   frontend:
