@@ -18,6 +18,8 @@ __pycache__/
 data/*.json
 data/synonyms.json
 !data/.gitkeep
+# Filtros anti-datos de la KB: config de instancia, no sensible — se versiona
+!data/kb_filters.json
 # Config de instancia opcional (si no quieres publicarla, descomenta):
 # data/live_tools.yaml
 # data/mcp_servers.json

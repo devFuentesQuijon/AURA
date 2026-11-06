@@ -50,6 +50,13 @@ BLOQUE = 2600                # tamaño de trozo para secciones largas
 MIN_SECCION = 40
 COOKIE_RE = re.compile(r"(aceptar|cookies?|pol[ií]tica de privacidad|consentimiento)", re.I)
 
+# Filtros anti-datos: si el sitio scrapeado es una app con datos de negocio
+# (facturas, montos, clientes), esas secciones NO deben quedar en la KB
+# estática — el chat es anónimo y solo los datos en vivo (con la cuenta del
+# usuario) deben exponerlos. data/kb_filters.json (opcional):
+#   {"drop_title_patterns": [...], "drop_text_patterns": [...]}
+FILTERS_PATH = BASE / "data" / "kb_filters.json"
+
 # términos significativos para el vocabulario del sitio (guardrails/sugerencias)
 STOP = set("""
 de la el los las y o u a en para por con del al un una es son ser está están
@@ -118,7 +125,29 @@ def filtrar_boilerplate(pages: list) -> None:
                 s["skip"] = True
 
 
-def vocabulario(pages: list, manuales: list | None = None) -> tuple:
+def cargar_filtros() -> tuple[list, list]:
+    """(title_patterns, text_patterns) de data/kb_filters.json; [] si no hay."""
+    if not FILTERS_PATH.exists():
+        return [], []
+    try:
+        data = json.loads(FILTERS_PATH.read_text(encoding="utf-8"))
+        titulos = [re.compile(p, re.I) for p in data.get("drop_title_patterns", [])]
+        textos = [re.compile(p, re.I) for p in data.get("drop_text_patterns", [])]
+        return titulos, textos
+    except Exception as e:
+        print(f"aviso: kb_filters.json ilegible ({e}); sin filtros extra")
+        return [], []
+
+
+def seccion_prohibida(titulo: str, texto: str,
+                      f_titulos: list, f_textos: list) -> bool:
+    """True si la sección trae datos de negocio que no van en la KB."""
+    return (any(p.search(titulo or "") for p in f_titulos)
+            or any(p.search(texto or "") for p in f_textos))
+
+
+def vocabulario(pages: list, manuales: list | None = None,
+                f_titulos: list | None = None) -> tuple:
     """(keywords, topics) del sitio para alcance y sugerencias."""
     terminos = Counter()
     for pg in pages:
@@ -128,6 +157,8 @@ def vocabulario(pages: list, manuales: list | None = None) -> tuple:
                     terminos[tok] += 2
         for s in pg.get("sections", []):
             if s.get("skip") or s.get("title") == "__intro__":
+                continue
+            if f_titulos and any(p.search(s["title"] or "") for p in f_titulos):
                 continue
             for tok in norm(s["title"]).split():
                 if len(tok) > 3 and tok not in STOP and not tok.isdigit():
@@ -146,6 +177,8 @@ def vocabulario(pages: list, manuales: list | None = None) -> tuple:
     for pg in pages:
         for s in pg.get("sections", []):
             if s.get("skip") or len(s["title"]) < 4:
+                continue
+            if f_titulos and any(p.search(s["title"] or "") for p in f_titulos):
                 continue
             t = s["title"].strip()
             nt = norm(t)
@@ -204,6 +237,7 @@ def main():
     pages = [p for p in scrape["pages"] if not p.get("failed") and p.get("sections")]
     filtrar_boilerplate(pages)
     limpiar_titulos(pages)
+    f_titulos, f_textos = cargar_filtros()
 
     chunks = []
 
@@ -227,7 +261,10 @@ def main():
     # --- Resumen por página + secciones ---
     for pg in pages:
         titulo = titulo_de(pg)
-        primera = next((s["text"] for s in pg["sections"] if not s.get("skip")), "")
+        primera = next((s["text"] for s in pg["sections"]
+                        if not s.get("skip")
+                        and not seccion_prohibida(s["title"], s["text"],
+                                                  f_titulos, f_textos)), "")
         resumen = [f"Página: {titulo}"]
         if pg.get("description"):
             resumen.append(f"Resumen: {pg['description']}")
@@ -240,6 +277,8 @@ def main():
 
         for s in pg["sections"]:
             if s.get("skip"):
+                continue
+            if seccion_prohibida(s["title"], s["text"], f_titulos, f_textos):
                 continue
             texto = f"{s['title']}\n{s['text']}"
             for i in range(0, len(texto), BLOQUE):
@@ -263,7 +302,7 @@ def main():
 
     # --- keywords/topics -> site.json ---
     site = json.loads(SITE_PATH.read_text(encoding="utf-8")) if SITE_PATH.exists() else {}
-    keywords, topics = vocabulario(pages, manuales)
+    keywords, topics = vocabulario(pages, manuales, f_titulos)
     site.update({"keywords": keywords, "topics": topics, "n_chunks": len(chunks),
                  "kb_built_at": datetime.now().isoformat(timespec="seconds")})
     SITE_PATH.write_text(json.dumps(site, ensure_ascii=False, indent=1), encoding="utf-8")
