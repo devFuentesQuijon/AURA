@@ -153,7 +153,7 @@ class Retriever:
                 if not cn:
                     continue
                 ctoks = set(cn.split())
-                # 'carreras online' dentro de 'carreras online estudia enac'
+                # 'precios' dentro de 'precios y planes'
                 if otoks and otoks <= ctoks:
                     sim = 0.95
                 elif len(objetivo) > 3:

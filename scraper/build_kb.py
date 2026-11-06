@@ -74,8 +74,8 @@ def slugify(s: str) -> str:
 
 
 def limpiar_titulos(pages: list) -> None:
-    """Quita el sufijo de marca de los títulos ('Carreras X | ENAC' ->
-    'Carreras X'): segmentos tras separador que se repiten en muchos
+    """Quita el sufijo de marca de los títulos ('Precios | MiSitio' ->
+    'Precios'): segmentos tras separador que se repiten en muchos
     títulos son marca, no contenido. Resultado en pg['titulo_limpio'].
     """
     seps = re.compile(r"\s+(?:\||·|—|–)\s+")
