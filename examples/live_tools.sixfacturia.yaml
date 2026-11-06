@@ -39,21 +39,22 @@
     URL: {{ web_base }}/
 
 - name: buscar_facturas
-  description: "Busca facturas reales con filtros; exige al menos uno (texto libre, estado pending/processed/error, tipo sale/purchase, estado de pago pendiente/parcial/saldado/incobrable, moneda ISO, rango de fechas AAAA-MM-DD). Úsala para 'muéstrame las facturas con error de esta semana' o 'busca la factura 123'."
+  description: "Busca facturas reales; exige al menos un filtro. tipo: sale = emitidas a clientes (facturamos a alguien), purchase = recibidas de proveedores. Para '¿cuánto nos facturó X?' usa tipo=purchase + search=X. Ojo: 'search' solo coincide con número de factura o emisor/proveedor; en ventas el emisor es la propia empresa, así que para 'facturas que le emitimos a X' primero usa buscar_clientes y luego filtra por cliente_id."
   method: POST
   endpoint: /invoices/search
   min_params: 1
   static_params: {page: 1, page_size: 5}
   params:
-    search: {description: "Texto libre (número, cliente, emisor)"}
+    search: {description: "Texto libre: número o emisor/proveedor (NO nombre del cliente en ventas)"}
     estado: {description: "pending | processed | error", map_to: status}
-    tipo: {description: "sale | purchase", map_to: invoice_type}
+    tipo: {description: "sale = emitidas a clientes | purchase = recibidas de proveedores", map_to: invoice_type}
     pago: {description: "pendiente | parcial | saldado | incobrable", map_to: payment_status}
     moneda: {description: "ISO 4217, ej. CLP", map_to: currency}
     desde: {description: "Fecha inicio AAAA-MM-DD", map_to: date_from}
     hasta: {description: "Fecha fin AAAA-MM-DD", map_to: date_to}
+    cliente_id: {description: "UUID de la contraparte (obtener con buscar_clientes); ventas por cliente o compras por proveedor", map_to: customer_id}
   template: |
-    {% if items %}Encontradas {{ total }} facturas (muestro {{ items | length }}):
+    {% if items %}Encontré {{ items | length }} factura(s) (muestro hasta 5; si necesitas el total exacto, acota con filtros):
     {% for it in items[:5] %}- {{ (it.issue_date or 's/f')[:10] }} · {{ it.number or 's/n' }} · {{ it.type }} · {{ it.status }}{{ (', pago: ' ~ it.payment_status) if it.payment_status else '' }}{{ (' · ' ~ it.currency ~ ' ' ~ it.total_amount) if it.total_amount is not none else '' }}{{ (' · emisor: ' ~ it.supplier[:60]) if it.supplier else '' }}{{ (' · nota: ' ~ it.status_note[:140]) if it.status_note else '' }}{{ '\n' }}{% endfor %}
     URL: {{ web_base }}/invoices
     {% else %}No encontré facturas con esos filtros.{{ '\n' }}{% endif %}
@@ -91,6 +92,6 @@
     busqueda: {description: "Nombre o RUT/tax id", map_to: search, required: true}
   template: |
     {% if items %}Contrapartes encontradas:
-    {% for c in items %}- {{ c.name }} (RUT/tax id: {{ c.tax_id or 's/d' }}{{ (', ' ~ c.email) if c.email else '' }}){{ '\n' }}{% endfor %}
+    {% for c in items %}- {{ c.name }} [id: {{ c.id }}] (RUT/tax id: {{ c.tax_id or 's/d' }}{{ (', ' ~ c.email) if c.email else '' }}){{ '\n' }}{% endfor %}
     URL: {{ web_base }}/customers
     {% else %}No encontré contrapartes que coincidan con '{{ busqueda }}'.{{ '\n' }}{% endif %}
