@@ -17,11 +17,18 @@ Formato de cada entrada:
     params:                           # opcional
       desde: {description: "...", map_to: date_from, required: false}
     static_params: {page: 1}          # opcional, siempre enviados
+    aggregate:                        # opcional: agrupa y suma EN CÓDIGO todas
+      {page_size: 500, max_pages: 10, #  las páginas de un endpoint-lista
+       group_by: [month, payment_status],
+       sum: [total_amount]}          # 'month' deriva de issue_date (YYYY-MM)
     template: |                       # opcional; sin template se aplana el JSON
-      Total: {{ total }}
+      Total: {{ total_n }} · {{ groups }} · {{ total_sum['total_amount'] }}
 
 Sin template, la respuesta se aplana genéricamente (dict/lista → líneas,
-con tope de filas). Las salidas pasan por el tope de caracteres global.
+con tope de filas). Con aggregate, el contexto del template recibe
+``groups`` (lista de dicts con los campos de group_by + ``count`` +
+``sum_<campo>``), ``total_n`` y ``total_sum`` (dict por campo sumado).
+Las salidas pasan por el tope de caracteres global.
 """
 
 import logging
@@ -115,10 +122,14 @@ def _construir(entrada: dict) -> tuple[dict, callable] | None:
     template = _jinja.from_string(src) if src.strip() else None
     static_params = entrada.get("static_params") or {}
     min_params = int(entrada.get("min_params", 0) or 0)
+    aggregate = entrada.get("aggregate") or None
+    if aggregate and not isinstance(aggregate, dict):
+        logger.warning("live_tools: aggregate inválido en %s, se ignora", name)
+        aggregate = None
 
     def impl(args=None, _name=name, _method=method, _endpoint=endpoint,
              _params=params_def, _static=static_params, _tpl=template,
-             _min=min_params):
+             _min=min_params, _agg=aggregate):
         if not isinstance(args, dict):
             args = {}
         args = {k: v for k, v in args.items() if v not in (None, "")}
@@ -144,6 +155,9 @@ def _construir(entrada: dict) -> tuple[dict, callable] | None:
             dest = (pdef or {}).get("map_to", pname)
             (query if _method == "GET" else body)[dest] = args[pname]
 
+        if _agg:
+            return _agregar(_method, path, query, body, _agg, _tpl)
+
         data = live_api._request(_method, path,
                                  params=query or None, json=body or None)
         if _tpl:
@@ -162,6 +176,73 @@ def _construir(entrada: dict) -> tuple[dict, callable] | None:
         return live_api._cortar(salida.strip() or "(respuesta vacía)")
 
     return spec, impl
+
+
+def _agregar(method: str, path: str, query: dict, body: dict,
+             agg: dict, tpl) -> str:
+    """Recorre las páginas de un endpoint-lista y agrupa/suma EN CÓDIGO.
+
+    Devuelve el template renderado con ``groups`` (cada grupo trae los
+    campos de group_by + ``count`` + ``sum_<campo>``), ``total_n`` y
+    ``total_sum``. La aritmética la hace el backend, no el modelo: así los
+    totales son exactos y el modelo no extrapola desde una página muestra.
+    """
+    page_size = min(int(agg.get("page_size", 500) or 500), 500)
+    max_pages = max(int(agg.get("max_pages", 10) or 10), 1)
+    group_fields = [str(f) for f in (agg.get("group_by") or [])]
+    sum_fields = [str(f) for f in (agg.get("sum") or [])]
+
+    todos: list = []
+    for pagina in range(1, max_pages + 1):
+        payload = dict(query if method == "GET" else body)
+        payload["page"] = pagina
+        payload["page_size"] = page_size
+        data_p = live_api._request(
+            method, path,
+            params=payload if method == "GET" else None,
+            json=None if method == "GET" else payload)
+        if not isinstance(data_p, list):
+            break
+        todos.extend(data_p)
+        if len(data_p) < page_size:
+            break
+
+    grupos: dict = {}
+    for it in todos:
+        if not isinstance(it, dict):
+            continue
+        clave = []
+        for f in group_fields:
+            if f == "month":
+                v = str((it.get("issue_date") or "")[:7]) or "s/f"
+            else:
+                v = it.get(f)
+                v = "sin dato" if v in (None, "") else str(v)
+            clave.append(v)
+        g = grupos.setdefault(tuple(clave), dict(zip(group_fields, clave)))
+        g["count"] = g.get("count", 0) + 1
+        for s in sum_fields:
+            val = it.get(s)
+            if isinstance(val, (int, float)) and not isinstance(val, bool):
+                g[f"sum_{s}"] = g.get(f"sum_{s}", 0.0) + float(val)
+
+    lista = sorted(grupos.values(),
+                   key=lambda g: [str(g.get(f, "")) for f in group_fields])
+    total_sum = {s: round(sum(g.get(f"sum_{s}", 0.0) for g in lista), 2)
+                 for s in sum_fields}
+    ctx = {"groups": lista, "total_n": len(todos), "total_sum": total_sum,
+           "truncated": len(todos) >= page_size * max_pages,
+           "web_base": live_api.WEB_BASE}
+    if tpl:
+        try:
+            salida = tpl.render(**ctx)
+            salida = re.sub(r"\n{2,}", "\n", salida)
+        except Exception as e:  # noqa: BLE001 - template malo no tumba el loop
+            logger.warning("live_tools: template agregado falló: %s", e)
+            salida = _aplanar(ctx)
+    else:
+        salida = _aplanar(ctx)
+    return live_api._cortar(salida.strip() or "(respuesta vacía)")
 
 
 def cargar() -> list[tuple[dict, callable]]:

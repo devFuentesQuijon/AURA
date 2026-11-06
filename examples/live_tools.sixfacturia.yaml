@@ -9,6 +9,10 @@
 #               renombra al parámetro real del API; {var} en el endpoint se
 #               rellena con el param y no se envía aparte
 #   static_params: siempre enviados (p. ej. paginación)
+#   aggregate:  opcional: recorre TODAS las páginas y agrupa/suma en el
+#               backend (page_size/max_pages/group_by/sum); el template
+#               recibe groups (campos + count + sum_<campo>), total_n y
+#               total_sum. 'month' agrupa por mes de issue_date (YYYY-MM)
 #   min_params:  mínimo de filtros exigidos antes de llamar
 #   template:    Jinja2 sobre el JSON de respuesta (+ web_base). Convención:
 #                los saltos de línea críticos se emiten con {{ '\n' }} (los
@@ -38,8 +42,29 @@
     {% if top_suppliers %}Top proveedores por monto: {% for t in top_suppliers[:5] %}{{ t.name }} ({{ t.currency }} {{ t.total_amount }}, {{ t.invoice_count }} docs){{ '; ' if not loop.last else '.' }}{{ '\n' if loop.last }}{% endfor %}{% endif %}
     URL: {{ web_base }}/
 
+- name: resumen_facturas
+  description: "Totales EXACTOS (conteo y suma de montos) agrupados por mes y estado de pago, calculados en el servidor recorriendo todas las páginas (no solo la primera). Úsala SIEMPRE que pregunten 'cuántas facturas', 'cuánto facturó/pagó', 'total pendiente/saldado', 'resumen de X en 2026'; usa buscar_facturas solo si piden ver documentos concretos. Para una contraparte por nombre: primero buscar_clientes → cliente_id."
+  method: POST
+  endpoint: /invoices/search
+  min_params: 1
+  aggregate: {page_size: 500, max_pages: 10, group_by: [month, payment_status], sum: [total_amount]}
+  params:
+    cliente_id: {description: "UUID de la contraparte (obtener con buscar_clientes); ventas por cliente o compras por proveedor", map_to: customer_id}
+    tipo: {description: "sale = emitidas a clientes | purchase = recibidas de proveedores", map_to: invoice_type}
+    search: {description: "Texto libre: número o emisor/proveedor (NO nombre del cliente en ventas)"}
+    estado: {description: "pending | processed | error", map_to: status}
+    moneda: {description: "ISO 4217, ej. CLP", map_to: currency}
+    desde: {description: "Fecha inicio AAAA-MM-DD", map_to: date_from}
+    hasta: {description: "Fecha fin AAAA-MM-DD", map_to: date_to}
+  template: |
+    Total: {{ total_n }} factura(s) · CLP {{ total_sum['total_amount'] }}
+    Por mes y estado de pago (conteo · monto):
+    {% for g in groups %}- {{ g.month }} · {{ g.payment_status }}: {{ g.count }} · CLP {{ g.sum_total_amount | round(2) }}{{ '\n' }}{% endfor %}
+    {% if truncated %}ATENCIÓN: hay más facturas de las que puedo agregar (tope interno): estos totales son PARCIALES. Acota con fechas y vuelve a preguntar.{{ '\n' }}{% endif %}
+    URL: {{ web_base }}/invoices
+
 - name: buscar_facturas
-  description: "Busca facturas reales; exige al menos un filtro. IMPORTANTE: responde máximo 50 por página (muestro 20 en la lista): JAMÁS concluyas que 'no hay más facturas' ni des totales globales mirando una sola página; si piden un resumen amplio ('todo 2026', 'resumen anual'), acota por rangos de fechas (mes a mes) y suma tú los montos por estado de pago, o avisa que es una muestra. tipo: sale = emitidas a clientes (facturamos a alguien), purchase = recibidas de proveedores. Para '¿cuánto nos facturó X?' usa tipo=purchase + search=X. Ojo: 'search' solo coincide con número de factura o emisor/proveedor; en ventas el emisor es la propia empresa, así que para 'facturas que le emitimos a X' primero usa buscar_clientes y luego filtra por cliente_id."
+  description: "Busca facturas reales; exige al menos un filtro. IMPORTANTE: responde máximo 50 por página (muestro 20 en la lista): JAMÁS concluyas que 'no hay más facturas' ni des totales globales mirando una sola página; para totales usa resumen_facturas. Esta tool es para LISTAR documentos concretos. tipo: sale = emitidas a clientes (facturamos a alguien), purchase = recibidas de proveedores. Para '¿cuánto nos facturó X?' usa tipo=purchase + search=X. Ojo: 'search' solo coincide con número de factura o emisor/proveedor; en ventas el emisor es la propia empresa, así que para 'facturas que le emitimos a X' primero usa buscar_clientes y luego filtra por cliente_id."
   method: POST
   endpoint: /invoices/search
   min_params: 1
